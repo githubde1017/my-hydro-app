@@ -1,0 +1,45 @@
+# Python Virtual Environment
+venv/
+.env
+config.py
+
+# Flask specific
+__pycache__/
+*.pyc
+*.pyo
+instance/
+.flaskenv # 如果 .flaskenv 包含敏感資訊，則忽略
+
+# Node.js dependencies
+node_modules/
+.DS_Store
+
+# Vue.js / Build outputs
+/frontend/dist/
+/frontend/node_modules/ # 再次確認，雖然上面的 node_modules 應該已經涵蓋
+
+# Log files
+*.log
+logs/
+
+# Operating System Files
+.DS_Store
+.localized
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific files
+.vscode/ # Visual Studio Code (如果不想分享編輯器配置)
+.idea/   # IntelliJ / PyCharm
+*.iml
+
+# Database files (if SQLite or local DB files are used, though you use PostgreSQL)
+*.db
+*.sqlite
+*.sqlite3
+
+# Other temporary files
+*~
+*.bak
+*.swp
