@@ -1,0 +1,33 @@
+.
+├── backend/                  # 後端 Flask 應用程式
+│   ├── venv/                 # Python 虛擬環境
+│   ├── app.py                # Flask 主程式，定義 API 路由
+│   ├── config.py             # 設定檔 (資料庫連線、密鑰等)
+│   ├── models.py             # 資料庫模型定義 (使用 SQLAlchemy 或直接 Psycopg2)
+│   ├── services/             # 業務邏輯和水理計算模組
+│   │   ├── hydraulic_calculator.py # 水理計算函式
+│   │   └── gis_processor.py      # GIS 空間處理函式
+│   ├── static/               # 靜態檔案 (如果 Flask 也服務前端)
+│   └── requirements.txt      # Python 相依套件列表
+│
+├── frontend/                 # 前端 Vue.js 應用程式
+│   ├── public/               # 公共靜態資源
+│   ├── src/                  # Vue.js 原始碼
+│   │   ├── assets/           # 靜態資源 (圖片、CSS 等)
+│   │   ├── components/       # Vue.js 組件
+│   │   │   ├── MapComponent.vue    # Leaflet 地圖組件
+│   │   │   ├── InputPanel.vue      # 輸入參數面板組件
+│   │   │   └── ResultDisplay.vue   # 結果顯示組件
+│   │   ├── views/            # 路由頁面 (如果有多頁)
+│   │   │   └── HomeView.vue
+│   │   ├── App.vue           # 根組件
+│   │   ├── main.js           # Vue.js 應用程式入口
+│   │   └── router/           # Vue Router 設定 (如果需要路由)
+│   ├── .env                  # 環境變數 (API URL 等)
+│   ├── package.json          # Node.js 相依套件與腳本
+│   └── vue.config.js         # Vue CLI 設定
+│
+├── database/                 # 資料庫相關腳本 (可選)
+│   └── init_db.sql           # 資料庫初始化腳本 (建表、PostGIS 擴展)
+│
+└── README.md                 # 專案說明文件

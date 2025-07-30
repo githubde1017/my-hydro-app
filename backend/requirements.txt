@@ -1,0 +1,9 @@
+Flask==2.3.3
+psycopg2-binary==2.9.9
+Flask-CORS==3.0.10
+SQLAlchemy==2.0.25
+GeoAlchemy2==0.14.3
+Shapely
+Fiona==1.9.5
+geojson==3.0.1
+pyproj
