@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from geoalchemy2 import Geometry, Geography # 確保導入 Geography
 from flask_cors import CORS
+import json
 import os
 import math
 
@@ -41,10 +42,14 @@ class Manhole(db.Model):
     is_overflow = db.Column(db.Boolean) # 是否溢流
 
     def to_dict(self):
+        # 從資料庫獲取 GeoJSON 字串，然後解析成 Python 字典
+        geojson_str = db.session.scalar(db.func.ST_AsGeoJSON(self.geom))
+        geojson_dict = json.loads(geojson_str) if geojson_str else None # 如果是空，則為 None
+
         return {
             'id': self.id,
             'name': self.name,
-            'geom': db.session.scalar(db.func.ST_AsGeoJSON(self.geom)), # 直接返回GeoJSON字串
+            'geom': geojson_dict,
             'top_elevation': self.top_elevation,
             'bottom_elevation': self.bottom_elevation,
             'design_flow_limit': self.design_flow_limit,
@@ -70,10 +75,12 @@ class Pipeline(db.Model):
     full_capacity_ratio = db.Column(db.Float) # 滿管度 (%)
 
     def to_dict(self):
+        geojson_str = db.session.scalar(db.func.ST_AsGeoJSON(self.geom))
+        geojson_dict = json.loads(geojson_str) if geojson_str else None
         return {
             'id': self.id,
             'name': self.name,
-            'geom': db.session.scalar(db.func.ST_AsGeoJSON(self.geom)),
+            'geom': geojson_dict,
             'diameter': self.diameter,
             'slope': self.slope,
             'material': self.material,
@@ -94,10 +101,12 @@ class CatchmentArea(db.Model):
     calculated_peak_flow = db.Column(db.Float) # 洪峰流量 (CMS)
 
     def to_dict(self):
+        geojson_str = db.session.scalar(db.func.ST_AsGeoJSON(self.geom))
+        geojson_dict = json.loads(geojson_str) if geojson_str else None
         return {
             'id': self.id,
             'name': self.name,
-            'geom': db.session.scalar(db.func.ST_AsGeoJSON(self.geom)),
+            'geom': geojson_dict,
             'runoff_coefficient': self.runoff_coefficient,
             'rainfall_intensity': self.rainfall_intensity,
             'calculated_peak_flow': self.calculated_peak_flow
@@ -140,6 +149,8 @@ def add_manhole():
 def update_manhole(id):
     manhole = Manhole.query.get_or_404(id)
     data = request.get_json()
+    print(f"Received data: {data}")
+    print(f"Type of data: {type(data)}")
     if 'geom' in data:
         geojson_dict = data['geom']
         shapely_geom = shape(geojson_dict)
@@ -192,6 +203,8 @@ def add_pipeline():
 def update_pipeline(id):
     pipeline = Pipeline.query.get_or_404(id)
     data = request.get_json()
+    print(f"Received data: {data}")
+    print(f"Type of data: {type(data)}")
     if 'geom' in data:
         geojson_dict = data['geom']
         shapely_geom = shape(geojson_dict)
@@ -239,6 +252,8 @@ def add_catchment_area():
 def update_catchment_area(id):
     area = CatchmentArea.query.get_or_404(id)
     data = request.get_json()
+    print(f"Received data: {data}")
+    print(f"Type of data: {type(data)}")
     if 'geom' in data:
         geojson_dict = data['geom']
         shapely_geom = shape(geojson_dict)
