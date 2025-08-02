@@ -1,21 +1,21 @@
 # D:\00_Project\my-hydro-app\backend\app.py
 
 from shapely.geometry import shape
-from shapely.wkt import dumps as wkt_dumps # 需要將 shapely 物件轉換為 WKT
+from shapely.wkt import dumps as wkt_dumps
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from geoalchemy2 import Geometry, Geography # 確保導入 Geography
+from geoalchemy2 import Geometry, Geography, functions
 from flask_cors import CORS
 import json
 import os
 import math
+import traceback
 
 app = Flask(__name__)
-CORS(app)  # 啟用 CORS，允許前端應用程式訪問
+CORS(app)
 
 # 資料庫配置
 # 請替換 'your_username' 和 'your_password' 為您的 PostgreSQL 實際用戶名和密碼
-# 如果您在安裝 PostgreSQL 時沒有特別設定，預設的用戶名通常是 'postgres'
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'postgresql://postgres:admin@localhost:5432/hydro_db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -29,23 +29,19 @@ class Manhole(db.Model):
     __tablename__ = 'manholes'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    geom = db.Column(Geometry('POINT', srid=4326))  # 人孔是點，指定 SRID
-    top_elevation = db.Column(db.Float, default=0.0) # 頂蓋標高 (m)
-    bottom_elevation = db.Column(db.Float, default=-5.0) # 底部標高 (m)
-    design_flow_limit = db.Column(db.Float, default=0.1) # 設計流量上限 (CMS)
-    overflow_elevation = db.Column(db.Float, default=-0.5) # 溢流點標高 (m)
-    inflow = db.Column(db.Float, default=0.0) # 流入流量 (CMS)
-    downstream_capacity = db.Column(db.Float, default=0.0) # 下游管道容量 (CMS)
-
-    # 模擬結果
-    calculated_water_level = db.Column(db.Float) # 計算水位 (m)
-    is_overflow = db.Column(db.Boolean) # 是否溢流
+    geom = db.Column(Geometry('POINT', srid=4326))
+    top_elevation = db.Column(db.Float, default=0.0)
+    bottom_elevation = db.Column(db.Float, default=-5.0)
+    design_flow_limit = db.Column(db.Float, default=0.1)
+    overflow_elevation = db.Column(db.Float, default=-0.5)
+    inflow = db.Column(db.Float, default=0.0)
+    downstream_capacity = db.Column(db.Float, default=0.0)
+    calculated_water_level = db.Column(db.Float)
+    is_overflow = db.Column(db.Boolean)
 
     def to_dict(self):
-        # 從資料庫獲取 GeoJSON 字串，然後解析成 Python 字典
         geojson_str = db.session.scalar(db.func.ST_AsGeoJSON(self.geom))
-        geojson_dict = json.loads(geojson_str) if geojson_str else None # 如果是空，則為 None
-
+        geojson_dict = json.loads(geojson_str) if geojson_str else None
         return {
             'id': self.id,
             'name': self.name,
@@ -64,15 +60,14 @@ class Pipeline(db.Model):
     __tablename__ = 'pipelines'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    geom = db.Column(Geometry('LINESTRING', srid=4326)) # 管線是線，指定 SRID
-    diameter = db.Column(db.Float, default=0.5) # 管徑 (m)
-    slope = db.Column(db.Float, default=0.001) # 坡度
-    material = db.Column(db.String(50), default='混凝土') # 管材
-    design_flow = db.Column(db.Float, default=0.1) # 設計流量 (CMS)
-
-    # 模擬結果
-    calculated_flow = db.Column(db.Float) # 計算流量 (CMS)
-    full_capacity_ratio = db.Column(db.Float) # 滿管度 (%)
+    geom = db.Column(Geometry('LINESTRING', srid=4326))
+    diameter = db.Column(db.Float, default=0.5)
+    slope = db.Column(db.Float, default=0.001)
+    material = db.Column(db.String(50), default='混凝土')
+    design_flow = db.Column(db.Float, default=0.1)
+    calculated_flow = db.Column(db.Float)
+    full_capacity_ratio = db.Column(db.Float)
+    calculated_length_m = db.Column(db.Float) # 新增長度欄位
 
     def to_dict(self):
         geojson_str = db.session.scalar(db.func.ST_AsGeoJSON(self.geom))
@@ -86,19 +81,19 @@ class Pipeline(db.Model):
             'material': self.material,
             'design_flow': self.design_flow,
             'calculated_flow': self.calculated_flow,
-            'full_capacity_ratio': self.full_capacity_ratio
+            'full_capacity_ratio': self.full_capacity_ratio,
+            'calculated_length_m': self.calculated_length_m # 返回長度資訊
         }
 
 class CatchmentArea(db.Model):
     __tablename__ = 'catchment_areas'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    geom = db.Column(Geometry('POLYGON', srid=4326)) # 集水區是面，指定 SRID
-    runoff_coefficient = db.Column(db.Float, default=0.5) # 逕流係數 (C)
-    rainfall_intensity = db.Column(db.Float, default=50.0) # 降雨強度 (mm/hr)
-
-    # 模擬結果
-    calculated_peak_flow = db.Column(db.Float) # 洪峰流量 (CMS)
+    geom = db.Column(Geography('POLYGON', srid=4326))
+    runoff_coefficient = db.Column(db.Float, default=0.5)
+    rainfall_intensity = db.Column(db.Float, default=50.0)
+    calculated_peak_flow = db.Column(db.Float)
+    calculated_area_sq_m = db.Column(db.Float) # 新增面積欄位
 
     def to_dict(self):
         geojson_str = db.session.scalar(db.func.ST_AsGeoJSON(self.geom))
@@ -109,15 +104,14 @@ class CatchmentArea(db.Model):
             'geom': geojson_dict,
             'runoff_coefficient': self.runoff_coefficient,
             'rainfall_intensity': self.rainfall_intensity,
-            'calculated_peak_flow': self.calculated_peak_flow
+            'calculated_peak_flow': self.calculated_peak_flow,
+            'calculated_area_sq_m': self.calculated_area_sq_m # 返回面積資訊
         }
 
 # ==============================================================================
 # API Routes
 # ==============================================================================
-
-
-# --- Manholes ---
+# ... (這裡的 API Routes 保持不變，因為它們會自動處理新的欄位)
 @app.route('/api/manholes', methods=['GET'])
 def get_manholes():
     manholes = Manhole.query.all()
@@ -126,14 +120,13 @@ def get_manholes():
 @app.route('/api/manholes', methods=['POST'])
 def add_manhole():
     data = request.get_json()
-    # 將 GeoJSON 字典轉換為 Shapely 幾何物件，然後再轉換為 WKT 字串
     geojson_dict = data['geom']
     shapely_geom = shape(geojson_dict)
-    wkt_geom = wkt_dumps(shapely_geom) # 將 Shapely 物件轉換為 WKT 字串
+    wkt_geom = wkt_dumps(shapely_geom)
 
     new_manhole = Manhole(
         name=data.get('name', '新建人孔'),
-        geom=wkt_geom, # 將 WKT 字串傳遞給 geom
+        geom=wkt_geom,
         top_elevation=data.get('top_elevation'),
         bottom_elevation=data.get('bottom_elevation'),
         design_flow_limit=data.get('design_flow_limit'),
@@ -149,12 +142,10 @@ def add_manhole():
 def update_manhole(id):
     manhole = Manhole.query.get_or_404(id)
     data = request.get_json()
-    print(f"Received data: {data}")
-    print(f"Type of data: {type(data)}")
     if 'geom' in data:
         geojson_dict = data['geom']
         shapely_geom = shape(geojson_dict)
-        manhole.geom = wkt_dumps(shapely_geom) # 將 WKT 字串傳遞給 geom
+        manhole.geom = wkt_dumps(shapely_geom)
     manhole.name = data.get('name', manhole.name)
     manhole.top_elevation = data.get('top_elevation', manhole.top_elevation)
     manhole.bottom_elevation = data.get('bottom_elevation', manhole.bottom_elevation)
@@ -162,7 +153,6 @@ def update_manhole(id):
     manhole.overflow_elevation = data.get('overflow_elevation', manhole.overflow_elevation)
     manhole.inflow = data.get('inflow', manhole.inflow)
     manhole.downstream_capacity = data.get('downstream_capacity', manhole.downstream_capacity)
-
     db.session.commit()
     return jsonify(manhole.to_dict())
 
@@ -182,14 +172,13 @@ def get_pipelines():
 @app.route('/api/pipelines', methods=['POST'])
 def add_pipeline():
     data = request.get_json()
-    # 將 GeoJSON 字典轉換為 Shapely 幾何物件，然後再轉換為 WKT 字串
     geojson_dict = data['geom']
     shapely_geom = shape(geojson_dict)
-    wkt_geom = wkt_dumps(shapely_geom) # 將 Shapely 物件轉換為 WKT 字串
+    wkt_geom = wkt_dumps(shapely_geom)
 
     new_pipeline = Pipeline(
         name=data.get('name', '新建管線'),
-        geom=wkt_geom, # 將 WKT 字串傳遞給 geom
+        geom=wkt_geom,
         diameter=data.get('diameter'),
         slope=data.get('slope'),
         material=data.get('material'),
@@ -203,12 +192,10 @@ def add_pipeline():
 def update_pipeline(id):
     pipeline = Pipeline.query.get_or_404(id)
     data = request.get_json()
-    print(f"Received data: {data}")
-    print(f"Type of data: {type(data)}")
     if 'geom' in data:
         geojson_dict = data['geom']
         shapely_geom = shape(geojson_dict)
-        pipeline.geom = wkt_dumps(shapely_geom) # 將 WKT 字串傳遞給 geom
+        pipeline.geom = wkt_dumps(shapely_geom)
     pipeline.name = data.get('name', pipeline.name)
     pipeline.diameter = data.get('diameter', pipeline.diameter)
     pipeline.slope = data.get('slope', pipeline.slope)
@@ -233,14 +220,13 @@ def get_catchment_areas():
 @app.route('/api/catchment_areas', methods=['POST'])
 def add_catchment_area():
     data = request.get_json()
-    # 將 GeoJSON 字典轉換為 Shapely 幾何物件，然後再轉換為 WKT 字串
     geojson_dict = data['geom']
     shapely_geom = shape(geojson_dict)
-    wkt_geom = wkt_dumps(shapely_geom) # 將 Shapely 物件轉換為 WKT 字串
+    wkt_geom = wkt_dumps(shapely_geom)
 
     new_area = CatchmentArea(
         name=data.get('name', '新建集水區'),
-        geom=wkt_geom, # 將 WKT 字串傳遞給 geom
+        geom=wkt_geom,
         runoff_coefficient=data.get('runoff_coefficient'),
         rainfall_intensity=data.get('rainfall_intensity')
     )
@@ -252,12 +238,10 @@ def add_catchment_area():
 def update_catchment_area(id):
     area = CatchmentArea.query.get_or_404(id)
     data = request.get_json()
-    print(f"Received data: {data}")
-    print(f"Type of data: {type(data)}")
     if 'geom' in data:
         geojson_dict = data['geom']
         shapely_geom = shape(geojson_dict)
-        area.geom = wkt_dumps(shapely_geom) # 將 WKT 字串傳遞給 geom
+        area.geom = wkt_dumps(shapely_geom)
     area.name = data.get('name', area.name)
     area.runoff_coefficient = data.get('runoff_coefficient', area.runoff_coefficient)
     area.rainfall_intensity = data.get('rainfall_intensity', area.rainfall_intensity)
@@ -271,83 +255,87 @@ def delete_catchment_area(id):
     db.session.commit()
     return '', 204
 
-
 # ==============================================================================
-# 模擬端點
+# 模擬端點 - 修正後的版本
 # ==============================================================================
 
 @app.route('/api/simulate', methods=['POST'])
 def simulate_hydraulics():
-    # 重新獲取最新數據
-    manholes = Manhole.query.all()
-    pipelines = Pipeline.query.all()
-    catchment_areas = CatchmentArea.query.all()
+    try:
+        manholes = Manhole.query.all()
+        pipelines = Pipeline.query.all()
+        catchment_areas = CatchmentArea.query.all()
 
-    # 1. 計算集水區洪峰流量 (簡化合理化公式 Q = C I A)
-    for area in catchment_areas:
-        # 使用 PostGIS 的 ST_Area(geom::geography) 獲取以平方米為單位的面積
-        # 需要確保 geom 欄位在模型中是 Geometry 類型，並且 PostGIS 已啟用
-        area_sq_m = db.session.scalar(db.func.ST_Area(area.geom))
-        
-        # 合理化公式: Q (CMS) = C * I * A / 3600 (I: mm/hr, A: m^2)
-        # 轉換單位：I (mm/hr) -> m/s (1mm/hr = 1/(1000*3600) m/s)
-        # Q = C * (I / 3600000) * A (m^3/s = CMS)
-        area.calculated_peak_flow = area.runoff_coefficient * area.rainfall_intensity * area_sq_m / (3600 * 1000) # 1000 for mm to m
-        
-        db.session.add(area) # 更新模型
-    db.session.commit()
-
-    # 2. 管道水理計算 (簡化曼寧公式 V = (1/n) * R^(2/3) * S^(1/2) 接著 Q = V * A)
-    for pipeline in pipelines:
-        n = 0.013 # 簡化：假設所有管材糙率係數為混凝土
-        if pipeline.material == '鑄鐵':
-            n = 0.014
-        elif pipeline.material == 'PVC':
-            n = 0.009
+        # 1. 計算集水區洪峰流量 (Q = C * I * A) 和面積
+        for area in catchment_areas:
+            geom_transformed = db.func.ST_Transform(area.geom, 3857)
+            area_sq_m = db.session.scalar(db.func.ST_Area(geom_transformed))
             
-        A_full = math.pi * (pipeline.diameter / 2)**2 # 滿管斷面積
-        R_full = pipeline.diameter / 4 # 滿管水力半徑
-
-        # 曼寧公式計算滿管流量 (CMS)
-        Q_full = (1/n) * A_full * (R_full**(2/3)) * (pipeline.slope**0.5)
-
-        # 簡化：假設管線的計算流量就是其設計流量
-        pipeline.calculated_flow = pipeline.design_flow
-        
-        if Q_full > 0:
-            pipeline.full_capacity_ratio = (pipeline.calculated_flow / Q_full) * 100
-        else:
-            pipeline.full_capacity_ratio = 0 # 避免除以零
-
-        db.session.add(pipeline)
-    db.session.commit()
-
-    # 3. 人孔水位和溢流判斷
-    for manhole in manholes:
-        if manhole.design_flow_limit > 0:
-            # 計算一個基於流量的水位比例
-            water_level_ratio = manhole.inflow / manhole.design_flow_limit
-            # 簡化水位計算：底部標高 + 比例 * (溢流點標高 - 底部標高)
-            manhole.calculated_water_level = manhole.bottom_elevation + \
-                                             water_level_ratio * (manhole.overflow_elevation - manhole.bottom_elevation)
+            calculated_flow = (area.runoff_coefficient * area.rainfall_intensity * area_sq_m) / 3600000
+            area.calculated_peak_flow = max(0, calculated_flow)
+            area.calculated_area_sq_m = area_sq_m # 儲存計算出的面積
             
-            # 將水位限制在合理範圍內 (不超過頂蓋標高)
-            manhole.calculated_water_level = min(manhole.calculated_water_level, manhole.top_elevation)
-        else:
-            manhole.calculated_water_level = manhole.bottom_elevation # 無流量上限時，水位在底部
+            db.session.add(area) 
 
-        # 溢流判斷：計算水位是否超過溢流點標高
-        manhole.is_overflow = manhole.calculated_water_level > manhole.overflow_elevation
-        
-        db.session.add(manhole)
-    db.session.commit()
+        # 2. 管道水理計算和長度
+        for pipeline in pipelines:
+            n = 0.013 
+            if pipeline.material == '鑄鐵':
+                n = 0.014
+            elif pipeline.material == 'PVC':
+                n = 0.009
+            
+            # 計算管線長度
+            # 由於 geom 欄位是 Geometry('LINESTRING', srid=4326)，我們也需要進行投影轉換以獲得公尺單位
+            geom_transformed_len = db.func.ST_Transform(pipeline.geom, 3857)
+            pipeline.calculated_length_m = db.session.scalar(db.func.ST_Length(geom_transformed_len))
 
-    return jsonify({"message": "模擬執行成功！", "manholes": [mh.to_dict() for mh in Manhole.query.all()],
-                    "pipelines": [pl.to_dict() for pl in Pipeline.query.all()],
-                    "catchment_areas": [ca.to_dict() for ca in CatchmentArea.query.all()]})
+            A_full = math.pi * (pipeline.diameter / 2)**2
+            R_full = pipeline.diameter / 4
 
+            Q_full = (1/n) * A_full * (R_full**(2/3)) * (pipeline.slope**0.5)
+
+            pipeline.calculated_flow = pipeline.design_flow
+            
+            if Q_full > 0:
+                pipeline.full_capacity_ratio = (pipeline.calculated_flow / Q_full) * 100
+            else:
+                pipeline.full_capacity_ratio = 0
+            
+            db.session.add(pipeline) 
+
+        # 3. 人孔水位和溢流判斷
+        for manhole in manholes:
+            if manhole.design_flow_limit > 0:
+                water_level_ratio = manhole.inflow / manhole.design_flow_limit
+                manhole.calculated_water_level = manhole.bottom_elevation + \
+                                                 water_level_ratio * (manhole.overflow_elevation - manhole.bottom_elevation)
+                manhole.calculated_water_level = min(manhole.calculated_water_level, manhole.top_elevation)
+            else:
+                manhole.calculated_water_level = manhole.bottom_elevation
+
+            manhole.is_overflow = manhole.calculated_water_level > manhole.overflow_elevation
+            
+            db.session.add(manhole) 
+
+        db.session.commit()
+
+        updated_manholes = Manhole.query.all()
+        updated_pipelines = Pipeline.query.all()
+        updated_catchment_areas = CatchmentArea.query.all()
+
+        return jsonify({
+            "message": "模擬執行成功！",
+            "manholes": [mh.to_dict() for mh in updated_manholes],
+            "pipelines": [pl.to_dict() for pl in updated_pipelines],
+            "catchment_areas": [ca.to_dict() for ca in updated_catchment_areas]
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        print("模擬執行失敗:")
+        traceback.print_exc() 
+        return jsonify({"message": f"模擬執行失敗: {str(e)}"}), 500
 
 if __name__ == '__main__':
-#    with app.app_context(): # 確保在應用程式上下文中執行
-#        db.create_all() # 確保資料庫表存在
     app.run(debug=True, port=5000)
